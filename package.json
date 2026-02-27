@@ -12,5 +12,8 @@
 		"@types/node": "^25.3.2",
 		"typescript": "^5.5.2",
 		"wrangler": "^4.69.0"
+	},
+	"dependencies": {
+		"bittorrent-tracker": "^11.2.2"
 	}
 }

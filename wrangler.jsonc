@@ -10,7 +10,7 @@
 	"migrations": [
 		{
 			"new_sqlite_classes": [
-				"MyDurableObject"
+				"TrackerObject"
 			],
 			"tag": "v1"
 		}
@@ -22,8 +22,8 @@
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "MyDurableObject",
-				"name": "MY_DURABLE_OBJECT"
+				"class_name": "TrackerObject",
+				"name": "TRACKER_OBJECT"
 			}
 		]
 	},

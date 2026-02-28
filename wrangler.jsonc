@@ -14,7 +14,7 @@
 		"bindings": [
 			{
 				"name": "WEBSOCKET_SERVER",
-				"class_name": "LobbyObject"
+				"class_name": "TrackerObject"
 			}
 		]
 	},
@@ -22,7 +22,7 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": [
-				"LobbyObject"
+				"TrackerObject"
 			]
 		}
 	],

@@ -36,7 +36,7 @@ function string2compact(peers: string[]) {
 }
 
 export interface Env {
-	WEBSOCKET_SERVER: DurableObjectNamespace<LobbyObject>;
+	WEBSOCKET_SERVER: DurableObjectNamespace<TrackerObject>;
 	SECRET_KEY: string;
 	TURN_KEY: string;
 	ASSETS: any;
@@ -67,7 +67,7 @@ interface SocketAttachment {
 }
 
 // Durable Object
-export class LobbyObject extends DurableObject {
+export class TrackerObject extends DurableObject {
 	intervalMs: number = 2 * 60 * 1000;
 	torrents: Record<string, any> = {};
 	_filter?: (infoHash: string, params: any, cb: (err?: any) => void) => void;

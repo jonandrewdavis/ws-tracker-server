@@ -42,10 +42,10 @@ export class TrackerObject extends DurableObject {
 	}
 
 	async fetch(request: Request): Promise<Response> {
-		const server = Server.new({
+		const server = new Server({
 			udp: false, // enable udp server? [default=true]
 			http: false, // enable http server? [default=true]
-			ws: true, // enable websocket server? [default=true]
+			ws: false, // enable websocket server? [default=true] (we handle it manually)
 			stats: true, // enable web-based statistics? [default=true]
 			trustProxy: false, // enable trusting x-forwarded-for header for remote IP [default=false]
 			filter: function (infoHash: string, params: any, cb: (err: Error | null) => void) {
@@ -76,9 +76,6 @@ export class TrackerObject extends DurableObject {
 				cb(null)
 			}
 		})
-		// // start tracker server listening! Use 0 to listen on a random free port.
-		const port = CONFIG_PORT
-		const hostname = "localhost"
 
 		server.on('error', function (err: Error) {
 			// fatal server error!
@@ -90,14 +87,6 @@ export class TrackerObject extends DurableObject {
 			console.log(err.message)
 		})
 
-		server.on('listening', function () {
-			// WS
-			const wsAddr = server.ws.address()
-			const wsHost = wsAddr.address !== '::' ? wsAddr.address : 'localhost'
-			const wsPort = wsAddr.port
-			console.log(`WebSocket tracker: ws://${wsHost}:${wsPort}`)
-		})
-
 		// listen for individual tracker messages from peers:
 		server.on('start', function (addr: string) {
 			console.log('got start message from ' + addr)
@@ -107,11 +96,48 @@ export class TrackerObject extends DurableObject {
 		server.on('update', function (addr: string) { })
 		server.on('stop', function (addr: string) { })
 
-		const sendSocket = server.onWebSocketConnection.bind(server)
+		const pair = new WebSocketPair();
+		const client = pair[0];
+		const serverSocket = pair[1];
+
+		serverSocket.accept();
+
+		// bittorrent-tracker expects a ws-like Socket object.
+		// We wrap the Cloudflare WebSocket to duck-type it.
+		const socketWrapper = {
+			send: (data: string | ArrayBuffer, cb?: (err?: Error) => void) => {
+				try {
+					serverSocket.send(data);
+					if (cb) cb();
+				} catch (err: any) {
+					if (cb) cb(err);
+				}
+			},
+			on: (event: string, cb: Function) => {
+				if (event === 'message') {
+					serverSocket.addEventListener('message', (e) => cb(e.data));
+				} else if (event === 'error') {
+					serverSocket.addEventListener('error', (e) => cb((e as any).error || new Error('WebSocket error')));
+				} else if (event === 'close') {
+					serverSocket.addEventListener('close', () => cb());
+				}
+			},
+			removeListener: (event: string, cb: Function) => {
+				// bittorrent-tracker calls removeListener on close, safe to no-op in this lightweight wrapper
+			},
+			upgradeReq: {
+				headers: Object.fromEntries(request.headers.entries()),
+				connection: {
+					remoteAddress: request.headers.get('cf-connecting-ip')
+				}
+			}
+		};
+
+		server.onWebSocketConnection(socketWrapper as any);
 
 		return new Response(null, {
 			status: 101,
-			webSocket: sendSocket
+			webSocket: client
 		});
 	};
 }

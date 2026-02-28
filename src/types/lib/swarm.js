@@ -68,7 +68,7 @@ class Swarm {
 
     _onAnnounceStarted(params, peer, id) {
         if (peer) {
-            debug('unexpected `started` event from peer that is already in swarm')
+            console.log('unexpected `started` event from peer that is already in swarm')
             return this._onAnnounceUpdate(params, peer, id) // treat as an update
         }
 
@@ -86,7 +86,7 @@ class Swarm {
 
     _onAnnounceStopped(params, peer, id) {
         if (!peer) {
-            debug('unexpected `stopped` event from peer that is not in swarm')
+            console.log('unexpected `stopped` event from peer that is not in swarm')
             return // do nothing
         }
 
@@ -105,11 +105,11 @@ class Swarm {
 
     _onAnnounceCompleted(params, peer, id) {
         if (!peer) {
-            debug('unexpected `completed` event from peer that is not in swarm')
+            console.log('unexpected `completed` event from peer that is not in swarm')
             return this._onAnnounceStarted(params, peer, id) // treat as a start
         }
         if (peer.complete) {
-            debug('unexpected `completed` event from peer that is already completed')
+            console.log('unexpected `completed` event from peer that is already completed')
             return this._onAnnounceUpdate(params, peer, id) // treat as an update
         }
 
@@ -121,7 +121,7 @@ class Swarm {
 
     _onAnnounceUpdate(params, peer, id) {
         if (!peer) {
-            debug('unexpected `update` event from peer that is not in swarm')
+            console.log('unexpected `update` event from peer that is not in swarm')
             return this._onAnnounceStarted(params, peer, id) // treat as a start
         }
 
@@ -135,7 +135,7 @@ class Swarm {
 
     _onAnnouncePaused(params, peer, id) {
         if (!peer) {
-            debug('unexpected `paused` event from peer that is not in swarm')
+            console.log('unexpected `paused` event from peer that is not in swarm')
             return this._onAnnounceStarted(params, peer, id) // treat as a start
         }
 

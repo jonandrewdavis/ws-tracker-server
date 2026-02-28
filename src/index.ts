@@ -1,179 +1,59 @@
 import { DurableObject } from "cloudflare:workers";
-import { Server } from 'bittorrent-tracker'
-
-const CONFIG_PORT = 80;
 
 export interface Env {
-	TRACKER_OBJECT: DurableObjectNamespace<TrackerObject>;
+	WEBSOCKET_SERVER: DurableObjectNamespace<LobbyObject>;
 	SECRET_KEY: string;
 	TURN_KEY: string;
 	ASSETS: any;
 }
 
-/**
- * Welcome to Cloudflare Workers! This is your first Durable Objects application.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your Durable Object in action
- * - Run `npm run deploy` to publish your application
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/durable-objects
- */
+export default {
+	async fetch(request, env, ctx): Promise<Response> {
+		// Expect to receive a WebSocket Upgrade request.
+		// If there is one, accept the request and return a WebSocket Response.
+		const upgradeHeader = request.headers.get('Upgrade');
+		if (!upgradeHeader || upgradeHeader !== 'websocket') {
+			return new Response('Durable Object expected Upgrade: websocket', {
+				status: 426,
+			});
+		}
 
-/** A Durable Object's behavior is defined in an exported Javascript class */
-export class TrackerObject extends DurableObject {
+		let id = env.WEBSOCKET_SERVER.idFromName('foo');
+		let stub = env.WEBSOCKET_SERVER.get(id);
+
+		return stub.fetch(request);
+	},
+} satisfies ExportedHandler<Env>;
+
+// Durable Object
+export class LobbyObject extends DurableObject {
 	secretKey: string;
+	currentlyConnectedWebSockets: number;
 	turnKey: string;
 
-	/**
-	 * The constructor is invoked once upon creation of the Durable Object, i.e. the first call to
-	 * 	`DurableObjectStub::get` for a given identifier (no-op constructors can be omitted)
-	 *
-	 * @param ctx - The interface for interacting with Durable Object state
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 */
 	constructor(ctx: DurableObjectState, env: Env) {
+		// This is reset whenever the constructor runs because
+		// regular WebSockets do not survive Durable Object resets.
 		super(ctx, env);
+		this.currentlyConnectedWebSockets = 0;
 		this.secretKey = env.SECRET_KEY;
 		this.turnKey = env.TURN_KEY;
 	}
 
 	async fetch(request: Request): Promise<Response> {
-		const server = new Server({
-			udp: false, // enable udp server? [default=true]
-			http: false, // enable http server? [default=true]
-			ws: false, // enable websocket server? [default=true] (we handle it manually)
-			stats: true, // enable web-based statistics? [default=true]
-			trustProxy: false, // enable trusting x-forwarded-for header for remote IP [default=false]
-			filter: function (infoHash: string, params: any, cb: (err: Error | null) => void) {
+		// Creates two ends of a WebSocket connection.
+		const webSocketPair = new WebSocketPair();
+		const [client, server] = Object.values(webSocketPair);
 
-				// TODO: Use the secret key to filter out any rogue requests. 
-
-
-				// Blacklist/whitelist function for allowing/disallowing torrents. If this option is
-				// omitted, all torrents are allowed. It is possible to interface with a database or
-				// external system before deciding to allow/deny, because this function is async.
-
-				// It is possible to block by peer id (whitelisting torrent clients) or by secret
-				// key (private trackers). Full access to the original HTTP/UDP request parameters
-				// are available in `params`.
-
-				// This example only allows one torrent.
-
-				// const allowed = (infoHash === 'aaa67059ed6bd08362da625b3ae77f6f4a075aaa')
-				// if (allowed) {
-				//     // If the callback is passed `null`, the torrent will be allowed.
-				//     cb(null)
-				// } else {
-				//     // If the callback is passed an `Error` object, the torrent will be disallowed
-				//     // and the error's `message` property will be given as the reason.
-				//     cb(new Error('disallowed torrent'))
-				// }
-
-				cb(null)
-			}
-		})
-
-		server.on('error', function (err: Error) {
-			// fatal server error!
-			console.log(err.message)
-		})
-
-		server.on('warning', function (err: Error) {
-			// client sent bad data. probably not a problem, just a buggy client.
-			console.log(err.message)
-		})
-
-		// listen for individual tracker messages from peers:
-		server.on('start', function (addr: string) {
-			console.log('got start message from ' + addr)
-		})
-
-		server.on('complete', function (addr: string) { })
-		server.on('update', function (addr: string) { })
-		server.on('stop', function (addr: string) { })
-
-		const pair = new WebSocketPair();
-		const client = pair[0];
-		const serverSocket = pair[1];
-
-		serverSocket.accept();
-
-		// bittorrent-tracker expects a ws-like Socket object.
-		// We wrap the Cloudflare WebSocket to duck-type it.
-		const socketWrapper = {
-			send: (data: string | ArrayBuffer, cb?: (err?: Error) => void) => {
-				try {
-					serverSocket.send(data);
-					if (cb) cb();
-				} catch (err: any) {
-					if (cb) cb(err);
-				}
-			},
-			on: (event: string, cb: Function) => {
-				if (event === 'message') {
-					serverSocket.addEventListener('message', (e) => cb(e.data));
-				} else if (event === 'error') {
-					serverSocket.addEventListener('error', (e) => cb((e as any).error || new Error('WebSocket error')));
-				} else if (event === 'close') {
-					serverSocket.addEventListener('close', () => cb());
-				}
-			},
-			removeListener: (event: string, cb: Function) => {
-				// bittorrent-tracker calls removeListener on close, safe to no-op in this lightweight wrapper
-			},
-			upgradeReq: {
-				headers: Object.fromEntries(request.headers.entries()),
-				connection: {
-					remoteAddress: request.headers.get('cf-connecting-ip')
-				}
-			}
-		};
-
-		server.onWebSocketConnection(socketWrapper as any);
+		// Calling `accept()` tells the runtime that this WebSocket is to begin terminating
+		// request within the Durable Object. It has the effect of "accepting" the connection,
+		// and allowing the WebSocket to send and receive messages.
+		server.accept();
+		this.currentlyConnectedWebSockets += 1;
 
 		return new Response(null, {
 			status: 101,
-			webSocket: client
+			webSocket: client,
 		});
-	};
+	}
 }
-
-
-
-export default {
-	/**
-	 * This is the standard fetch handler for a Cloudflare Worker
-	 *
-	 * @param request - The request submitted to the Worker from the client
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 * @param ctx - The execution context of the Worker
-	 * @returns The response to be sent back to the client
-	 */
-	async fetch(request, env, ctx): Promise<Response> {
-		if (request.url.endsWith("/announce")) {
-
-			const upgradeHeader = request.headers.get('Upgrade');
-			if (!upgradeHeader || upgradeHeader !== 'websocket') {
-				return new Response('Durable Object expected Upgrade: websocket', {
-					status: 426,
-				});
-			}
-
-			// Expect to receive a WebSocket Upgrade request.
-			// If there is one, accept the request and return a WebSocket Response.
-
-			// This example will refer to the same Durable Object,
-			// since the name "foo" is hardcoded.
-			let id = env.TRACKER_OBJECT.idFromName('foo');
-			let stub = env.TRACKER_OBJECT.get(id);
-
-			return stub.fetch(request);
-		}
-
-		return new Response(env.ASSETS.fetch(request));
-	},
-} satisfies ExportedHandler<Env>;

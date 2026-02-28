@@ -15,7 +15,7 @@
 	},
 	"dependencies": {
 		"@types/ws": "^8.18.1",
-		"bittorrent-tracker": "^11.2.2"
+		"ws": "^8.19.0"
 	},
 	"packageManager": "yarn@4.12.0"
 }

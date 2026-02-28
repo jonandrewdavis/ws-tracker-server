@@ -6,34 +6,32 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "ws-tracker-server",
 	"main": "src/index.ts",
-	"compatibility_date": "2026-02-27",
-	"migrations": [
-		{
-			"new_sqlite_classes": [
-				"TrackerObject"
-			],
-			"tag": "v1"
-		}
+	"compatibility_flags": [
+		"nodejs_compat"
 	],
-	"assets": {
-		// The path to the directory containing the `index.html` file to be served at `/`
-		"directory": "./public",
-		"binding": "ASSETS"
-	},
+	"compatibility_date": "2025-07-11",
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "TrackerObject",
-				"name": "TRACKER_OBJECT"
+				"name": "WEBSOCKET_SERVER",
+				"class_name": "LobbyObject"
 			}
 		]
 	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"LobbyObject"
+			]
+		}
+	],
 	"observability": {
-		"enabled": true
-	},
-	"compatibility_flags": [
-		"nodejs_compat"
-	]
+		"enabled": true,
+		"logs": {
+			"enabled": true
+		}
+	}
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

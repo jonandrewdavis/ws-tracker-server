@@ -111,6 +111,7 @@ export class TrackerObject extends DurableObject {
 
 		return new Response(null, {
 			status: 101,
+			webSocket: server.ws
 		});
 	};
 }

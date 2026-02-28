@@ -11,6 +11,7 @@ export const IPV6_RE = /^[\da-fA-F:]+$/
 export const REMOVE_IPV4_MAPPED_IPV6_RE = /^::ffff:/
 
 export const CONNECTION_ID = concat([toUInt32(0x417), toUInt32(0x27101980)])
+export const MAX_ANNOUNCE_PEERS = 50
 export const ACTIONS = { CONNECT: 0, ANNOUNCE: 1, SCRAPE: 2, ERROR: 3 }
 export const EVENTS = { update: 0, completed: 1, started: 2, stopped: 3, paused: 4 }
 export const EVENT_IDS = {

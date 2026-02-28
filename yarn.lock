@@ -601,6 +601,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/unordered-array-remove@npm:^1":
+  version: 1.0.2
+  resolution: "@types/unordered-array-remove@npm:1.0.2"
+  checksum: 10c0/9ab9a9e0b86342fc68191df52d2796950a3d5d5c2dc71502c489b82bb3178467b826bc50fff7c5cb86cf9b60f0b7948f1017d0d1c384739c0325c2558c1d542b
+  languageName: node
+  linkType: hard
+
 "@types/ws@npm:^8.18.1":
   version: 8.18.1
   resolution: "@types/ws@npm:8.18.1"
@@ -628,6 +635,13 @@ __metadata:
   version: 4.0.4
   resolution: "balanced-match@npm:4.0.4"
   checksum: 10c0/07e86102a3eb2ee2a6a1a89164f29d0dbaebd28f2ca3f5ca786f36b8b23d9e417eb3be45a4acf754f837be5ac0a2317de90d3fcb7f4f4dc95720a1f36b26a17b
+  languageName: node
+  linkType: hard
+
+"base64-arraybuffer@npm:^1.0.2":
+  version: 1.0.2
+  resolution: "base64-arraybuffer@npm:1.0.2"
+  checksum: 10c0/3acac95c70f9406e87a41073558ba85b6be9dbffb013a3d2a710e3f2d534d506c911847d5d9be4de458af6362c676de0a5c4c2d7bdf4def502d00b313368e72f
   languageName: node
   linkType: hard
 
@@ -910,6 +924,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"inherits@npm:^2.0.1":
+  version: 2.0.4
+  resolution: "inherits@npm:2.0.4"
+  checksum: 10c0/4e531f648b29039fb7426fb94075e6545faa1eb9fe83c29f0b6d9e7263aceb4289d2d4557db0d428188eeb449cc7c5e77b0a0b2c4e248ff2a65933a0dee49ef2
+  languageName: node
+  linkType: hard
+
 "ip-address@npm:^10.0.1":
   version: 10.1.0
   resolution: "ip-address@npm:10.1.0"
@@ -935,6 +956,15 @@ __metadata:
   version: 11.2.6
   resolution: "lru-cache@npm:11.2.6"
   checksum: 10c0/73bbffb298760e71b2bfe8ebc16a311c6a60ceddbba919cfedfd8635c2d125fbfb5a39b71818200e67973b11f8d59c5a9e31d6f90722e340e90393663a66e5cd
+  languageName: node
+  linkType: hard
+
+"lru@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "lru@npm:3.1.0"
+  dependencies:
+    inherits: "npm:^2.0.1"
+  checksum: 10c0/b05d4bece5eca2251252034932dfb660a52efe9bd512951c52623f4e3b8f05ae91b7776c559dfe36946b81dc0d8c35245d258cd82d2fdef5b9dd9d9616c7ea19
   languageName: node
   linkType: hard
 
@@ -1148,6 +1178,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"random-iterate@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "random-iterate@npm:1.0.1"
+  checksum: 10c0/f22a3458ec3aeca49fe9b2a3ece61fe8186615b9d66ed53d99c1139b8cbd1f986809e9d4f5bae052dd0c5bdeb7c2797e9db5cf41c12a53b9325a5e65e27ee0d3
+  languageName: node
+  linkType: hard
+
 "retry@npm:^0.13.1":
   version: 0.13.1
   resolution: "retry@npm:0.13.1"
@@ -1349,6 +1386,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"uint8-util@npm:^2.2.6":
+  version: 2.2.6
+  resolution: "uint8-util@npm:2.2.6"
+  dependencies:
+    base64-arraybuffer: "npm:^1.0.2"
+  checksum: 10c0/9d60c473205a8bf802e575e915f5b451668373912d58985e75b0c4d50b38856ff5fb6938fc88c2ac2405f7e859a05f8f341020866abc55784809d8325fd2f497
+  languageName: node
+  linkType: hard
+
 "undici-types@npm:~7.18.0":
   version: 7.18.2
   resolution: "undici-types@npm:7.18.2"
@@ -1387,6 +1433,13 @@ __metadata:
   dependencies:
     imurmurhash: "npm:^0.1.4"
   checksum: 10c0/da7ade4cb04eb33ad0499861f82fe95ce9c7c878b7139dc54d140ecfb6a6541c18a5c8dac16188b8b379fe62c0c1f1b710814baac910cde5f4fec06212126c6a
+  languageName: node
+  linkType: hard
+
+"unordered-array-remove@npm:^1.0.2":
+  version: 1.0.2
+  resolution: "unordered-array-remove@npm:1.0.2"
+  checksum: 10c0/150ef0774487b7caec8409667eb732a8b8ee03d28c18a1fbe44be3ccdd4379759fce2229d154def97602754c124e86399087c3ae300f6d0d16a35c5e075f2368
   languageName: node
   linkType: hard
 
@@ -1460,8 +1513,13 @@ __metadata:
   resolution: "ws-tracker-server@workspace:."
   dependencies:
     "@types/node": "npm:^25.3.2"
+    "@types/unordered-array-remove": "npm:^1"
     "@types/ws": "npm:^8.18.1"
+    lru: "npm:^3.1.0"
+    random-iterate: "npm:^1.0.1"
     typescript: "npm:^5.5.2"
+    uint8-util: "npm:^2.2.6"
+    unordered-array-remove: "npm:^1.0.2"
     wrangler: "npm:^4.69.0"
     ws: "npm:^8.19.0"
   languageName: unknown

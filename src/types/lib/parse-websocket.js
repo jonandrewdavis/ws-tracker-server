@@ -1,6 +1,6 @@
 import { bin2hex } from 'uint8-util'
 
-import common from '../common.js'
+import * as common from './common-node.js'
 
 export default function (socket, opts, params) {
     if (!opts) opts = {}

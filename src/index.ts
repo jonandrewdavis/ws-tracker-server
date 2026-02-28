@@ -1,4 +1,39 @@
 import { DurableObject } from "cloudflare:workers";
+// @ts-ignore
+import Swarm from "./types/lib/swarm.js";
+// @ts-ignore
+import parseWebSocketRequest from "./types/lib/parse-websocket.js";
+// @ts-ignore
+import * as common from "./types/lib/common-node.js";
+
+function hex2bin(hex: string) {
+	if (hex.length % 2 !== 0) hex = '0' + hex;
+	let str = "";
+	for (let i = 0; i < hex.length; i += 2) {
+		str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+	}
+	return str;
+}
+
+function string2compact(peers: string[]) {
+	let buf = new Uint8Array(peers.length * 6);
+	let offset = 0;
+	for (let peer of peers) {
+		let [ip, port] = peer.split(':');
+		let parts = ip.split('.');
+		for (let i = 0; i < 4; i++) {
+			buf[offset++] = parseInt(parts[i], 10) || 0;
+		}
+		let p = parseInt(port, 10) || 0;
+		buf[offset++] = (p >> 8) & 0xff;
+		buf[offset++] = p & 0xff;
+	}
+	let str = "";
+	for (let i = 0; i < buf.length; i++) {
+		str += String.fromCharCode(buf[i]);
+	}
+	return str;
+}
 
 export interface Env {
 	WEBSOCKET_SERVER: DurableObjectNamespace<LobbyObject>;
@@ -8,9 +43,7 @@ export interface Env {
 }
 
 export default {
-	async fetch(request, env, ctx): Promise<Response> {
-		// Expect to receive a WebSocket Upgrade request.
-		// If there is one, accept the request and return a WebSocket Response.
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const upgradeHeader = request.headers.get('Upgrade');
 		if (!upgradeHeader || upgradeHeader !== 'websocket') {
 			return new Response('Durable Object expected Upgrade: websocket', {
@@ -25,35 +58,293 @@ export default {
 	},
 } satisfies ExportedHandler<Env>;
 
+interface SocketAttachment {
+	peerId: string | null;
+	infoHashes: string[];
+	ip: string;
+	port: number;
+	addr: string;
+}
+
 // Durable Object
 export class LobbyObject extends DurableObject {
-	secretKey: string;
-	currentlyConnectedWebSockets: number;
-	turnKey: string;
+	intervalMs: number = 2 * 60 * 1000;
+	torrents: Record<string, any> = {};
+	_filter?: (infoHash: string, params: any, cb: (err?: any) => void) => void;
 
 	constructor(ctx: DurableObjectState, env: Env) {
-		// This is reset whenever the constructor runs because
-		// regular WebSockets do not survive Durable Object resets.
 		super(ctx, env);
-		this.currentlyConnectedWebSockets = 0;
-		this.secretKey = env.SECRET_KEY;
-		this.turnKey = env.TURN_KEY;
 	}
 
 	async fetch(request: Request): Promise<Response> {
-		// Creates two ends of a WebSocket connection.
 		const webSocketPair = new WebSocketPair();
 		const [client, server] = Object.values(webSocketPair);
 
-		// Calling `accept()` tells the runtime that this WebSocket is to begin terminating
-		// request within the Durable Object. It has the effect of "accepting" the connection,
-		// and allowing the WebSocket to send and receive messages.
-		server.accept();
-		this.currentlyConnectedWebSockets += 1;
+		let ip = request.headers.get('cf-connecting-ip') || '127.0.0.1';
+		let port = 0;
+		let addr = `${ip}:${port}`;
+
+		this.ctx.acceptWebSocket(server);
+
+		server.serializeAttachment({
+			peerId: null,
+			infoHashes: [],
+			ip,
+			port,
+			addr
+		} as SocketAttachment);
 
 		return new Response(null, {
 			status: 101,
 			webSocket: client,
+		});
+	}
+
+	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
+		let attachment = ws.deserializeAttachment() as SocketAttachment;
+
+		// inject connection info into ws so parseWebSocketRequest finds them
+		(ws as any).ip = attachment.ip;
+		(ws as any).port = attachment.port;
+		(ws as any).addr = attachment.addr;
+
+		let params: any;
+		try {
+			params = parseWebSocketRequest(ws, {}, message as string);
+		} catch (err: any) {
+			ws.send(JSON.stringify({
+				'failure reason': err.message
+			}));
+			console.warn('parseWebSocketRequest warning:', err);
+			return;
+		}
+
+		if (!attachment.peerId) {
+			attachment.peerId = params.peer_id; // as hex
+			ws.serializeAttachment(attachment);
+		}
+
+		this._onRequest(params, ws, attachment, (err: any, response: any) => {
+			if (err) {
+				ws.send(JSON.stringify({
+					action: params.action === common.ACTIONS.ANNOUNCE ? 'announce' : 'scrape',
+					'failure reason': err.message,
+					info_hash: hex2bin(params.info_hash)
+				}));
+				console.warn('onRequest warning', err);
+				return;
+			}
+
+			response.action = params.action === common.ACTIONS.ANNOUNCE ? 'announce' : 'scrape';
+
+			let peers: any;
+			if (response.action === 'announce') {
+				peers = response.peers;
+				delete response.peers;
+
+				if (!attachment.infoHashes.includes(params.info_hash)) {
+					attachment.infoHashes.push(params.info_hash);
+					ws.serializeAttachment(attachment);
+				}
+
+				response.info_hash = hex2bin(params.info_hash);
+				response.interval = Math.ceil(this.intervalMs / 1000 / 5);
+			}
+
+			if (!params.answer) {
+				ws.send(JSON.stringify(response));
+			}
+
+			if (Array.isArray(params.offers)) {
+				peers.forEach((peer: any, i: number) => {
+					peer.socket.send(JSON.stringify({
+						action: 'announce',
+						offer: params.offers[i].offer,
+						offer_id: params.offers[i].offer_id,
+						peer_id: hex2bin(attachment.peerId!),
+						info_hash: hex2bin(params.info_hash)
+					}));
+				});
+			}
+
+			const done = () => {
+				// Event emitters are not present natively in DOs.
+				// Logic can be added here if needed.
+			}
+
+			if (params.answer) {
+				this.getSwarm(params.info_hash, (err: any, swarm: any) => {
+					if (err) return console.warn(err);
+					if (!swarm) {
+						return console.warn(new Error('no swarm with that `info_hash`'));
+					}
+
+					const toPeer = swarm.peers.get(params.to_peer_id);
+					if (!toPeer) {
+						return console.warn(new Error('no peer with that `to_peer_id`'));
+					}
+
+					toPeer.socket.send(JSON.stringify({
+						action: 'announce',
+						answer: params.answer,
+						offer_id: params.offer_id,
+						peer_id: hex2bin(attachment.peerId!),
+						info_hash: hex2bin(params.info_hash)
+					}));
+
+					done();
+				});
+			} else {
+				done();
+			}
+		});
+	}
+
+	async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
+		let attachment = ws.deserializeAttachment() as SocketAttachment | null;
+		if (!attachment) return;
+
+		if (attachment.peerId) {
+			attachment.infoHashes.slice(0).forEach(infoHash => {
+				const swarm = this.torrents[infoHash];
+				if (swarm) {
+					swarm.announce({
+						type: 'ws',
+						event: 'stopped',
+						numwant: 0,
+						peer_id: attachment!.peerId
+					});
+				}
+			});
+		}
+
+		attachment.peerId = null;
+		attachment.infoHashes = [];
+		ws.serializeAttachment(attachment);
+	}
+
+	async webSocketError(ws: WebSocket, error: unknown) {
+		console.warn('websocket error', error);
+		await this.webSocketClose(ws, 1006, 'Error', false);
+	}
+
+	_onRequest(params: any, ws: WebSocket, attachment: SocketAttachment, cb: (err: any, response?: any) => void) {
+		if (params && params.action === common.ACTIONS.CONNECT) {
+			cb(null, { action: common.ACTIONS.CONNECT });
+		} else if (params && params.action === common.ACTIONS.ANNOUNCE) {
+			this._onAnnounce(params, ws, attachment, cb);
+		} else if (params && params.action === common.ACTIONS.SCRAPE) {
+			this._onScrape(params, cb);
+		} else {
+			cb(new Error('Invalid action'));
+		}
+	}
+
+	getSwarm(infoHash: string, cb: (err: any, swarm?: any) => void) {
+		cb(null, this.torrents[infoHash]);
+	}
+
+	createSwarm(infoHash: string, cb: (err: any, swarm?: any) => void) {
+		let swarm = new Swarm(infoHash, this);
+		this.torrents[infoHash] = swarm;
+		cb(null, swarm);
+	}
+
+	_onAnnounce(params: any, ws: WebSocket, attachment: SocketAttachment, cb: (err: any, response?: any) => void) {
+		const self = this;
+
+		if (this._filter) {
+			this._filter(params.info_hash, params, err => {
+				if (err) return cb(err);
+				getOrCreateSwarm((err: any, swarm: any) => {
+					if (err) return cb(err);
+					announce(swarm);
+				});
+			});
+		} else {
+			getOrCreateSwarm((err: any, swarm: any) => {
+				if (err) return cb(err);
+				announce(swarm);
+			});
+		}
+
+		function getOrCreateSwarm(cb: (err: any, swarm?: any) => void) {
+			self.getSwarm(params.info_hash, (err: any, swarm: any) => {
+				if (err) return cb(err);
+				if (swarm) return cb(null, swarm);
+				self.createSwarm(params.info_hash, (err: any, swarm: any) => {
+					if (err) return cb(err);
+					cb(null, swarm);
+				});
+			});
+		}
+
+		function announce(swarm: any) {
+			if (!params.event || params.event === 'empty') params.event = 'update';
+			swarm.announce(params, (err: any, response: any) => {
+				if (err) return cb(err);
+
+				if (!response.action) response.action = common.ACTIONS.ANNOUNCE;
+				if (!response.interval) response.interval = Math.ceil(self.intervalMs / 1000);
+
+				if (params.compact === 1) {
+					const peers = response.peers;
+					response.peers = string2compact(peers.filter((peer: any) => common.IPV4_RE.test(peer.ip)).map((peer: any) => `${peer.ip}:${peer.port}`));
+					response.peers6 = string2compact(peers.filter((peer: any) => common.IPV6_RE.test(peer.ip)).map((peer: any) => `[${peer.ip}]:${peer.port}`));
+				} else if (params.compact === 0) {
+					response.peers = response.peers.map((peer: any) => ({
+						'peer id': hex2bin(peer.peerId),
+						ip: peer.ip,
+						port: peer.port
+					}));
+				}
+
+				cb(null, response);
+			});
+		}
+	}
+
+	_onScrape(params: any, cb: (err: any, response?: any) => void) {
+		if (params.info_hash == null) {
+			params.info_hash = Object.keys(this.torrents);
+		}
+
+		Promise.all(params.info_hash.map((infoHash: string) => {
+			return new Promise((resolve, reject) => {
+				this.getSwarm(infoHash, (err: any, swarm: any) => {
+					if (err) return reject(err);
+					if (swarm) {
+						swarm.scrape(params, (err: any, scrapeInfo: any) => {
+							if (err) return reject(err);
+							resolve({
+								infoHash,
+								complete: (scrapeInfo && scrapeInfo.complete) || 0,
+								incomplete: (scrapeInfo && scrapeInfo.incomplete) || 0
+							});
+						});
+					} else {
+						resolve({ infoHash, complete: 0, incomplete: 0 });
+					}
+				});
+			});
+		})).then((results: any[]) => {
+			const response: any = {
+				action: common.ACTIONS.SCRAPE,
+				files: {},
+				flags: { min_request_interval: Math.ceil(this.intervalMs / 1000) }
+			};
+
+			results.forEach((result: any) => {
+				response.files[hex2bin(result.infoHash)] = {
+					complete: result.complete || 0,
+					incomplete: result.incomplete || 0,
+					downloaded: result.complete || 0
+				};
+			});
+
+			cb(null, response);
+		}).catch(err => {
+			cb(err);
 		});
 	}
 }

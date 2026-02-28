@@ -7,6 +7,7 @@ export interface Env {
 	TRACKER_OBJECT: DurableObjectNamespace<TrackerObject>;
 	SECRET_KEY: string;
 	TURN_KEY: string;
+	ASSETS: any;
 }
 
 /**
@@ -36,7 +37,7 @@ export class TrackerObject extends DurableObject {
 	 */
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.secretKey = env.SECRET_KEY || '9317e4d6-83b3-4188-94c4-353a2798d3c1';
+		this.secretKey = env.SECRET_KEY;
 		this.turnKey = env.TURN_KEY;
 	}
 
@@ -48,6 +49,10 @@ export class TrackerObject extends DurableObject {
 			stats: true, // enable web-based statistics? [default=true]
 			trustProxy: false, // enable trusting x-forwarded-for header for remote IP [default=false]
 			filter: function (infoHash: string, params: any, cb: (err: Error | null) => void) {
+
+				// TODO: Use the secret key to filter out any rogue requests. 
+
+
 				// Blacklist/whitelist function for allowing/disallowing torrents. If this option is
 				// omitted, all torrents are allowed. It is possible to interface with a database or
 				// external system before deciding to allow/deny, because this function is async.
@@ -122,22 +127,26 @@ export default {
 	 * @returns The response to be sent back to the client
 	 */
 	async fetch(request, env, ctx): Promise<Response> {
-		// Expect to receive a WebSocket Upgrade request.
-		// If there is one, accept the request and return a WebSocket Response.
-		const upgradeHeader = request.headers.get('Upgrade');
-		if (!upgradeHeader || upgradeHeader !== 'websocket') {
-			return new Response('Durable Object expected Upgrade: websocket', {
-				status: 426,
-			});
+		if (request.url == "/announce") {
+
+			const upgradeHeader = request.headers.get('Upgrade');
+			if (!upgradeHeader || upgradeHeader !== 'websocket') {
+				return new Response('Durable Object expected Upgrade: websocket', {
+					status: 426,
+				});
+			}
+
+			// Expect to receive a WebSocket Upgrade request.
+			// If there is one, accept the request and return a WebSocket Response.
+
+			// This example will refer to the same Durable Object,
+			// since the name "foo" is hardcoded.
+			let id = env.TRACKER_OBJECT.idFromName('foo');
+			let stub = env.TRACKER_OBJECT.get(id);
+
+			return stub.fetch(request);
 		}
 
-		// This example will refer to the same Durable Object,
-		// since the name "foo" is hardcoded.
-		let id = env.TRACKER_OBJECT.idFromName('foo');
-		let stub = env.TRACKER_OBJECT.get(id);
-
-		return stub.fetch(request);
-
-
+		return new Response(env.ASSETS.fetch(request));
 	},
 } satisfies ExportedHandler<Env>;

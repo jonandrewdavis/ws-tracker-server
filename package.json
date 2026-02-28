@@ -1,0 +1,27 @@
+{
+	"name": "ws-tracker-server",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"cf-typegen": "wrangler types"
+	},
+	"devDependencies": {
+		"@types/node": "^25.3.2",
+		"@types/unordered-array-remove": "^1",
+		"typescript": "^5.5.2",
+		"wrangler": "^4.69.0"
+	},
+	"dependencies": {
+		"@types/ws": "^8.18.1",
+		"lru": "^3.1.0",
+		"random-iterate": "^1.0.1",
+		"string2compact": "^2.0.1",
+		"uint8-util": "^2.2.6",
+		"unordered-array-remove": "^1.0.2",
+		"ws": "^8.19.0"
+	},
+	"packageManager": "yarn@4.12.0"
+}

@@ -624,6 +624,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"addr-to-ip-port@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "addr-to-ip-port@npm:2.0.0"
+  checksum: 10c0/47d08eb23e4815e783801fdb20bcbc7ccd0026c63dc9a67660ad24de5490271e1a701e3690cb5c79cf9cedea2fb88d4524476f7f1e45efc22a4db58f922be984
+  languageName: node
+  linkType: hard
+
 "agent-base@npm:^7.1.0, agent-base@npm:^7.1.2":
   version: 7.1.4
   resolution: "agent-base@npm:7.1.4"
@@ -935,6 +942,13 @@ __metadata:
   version: 10.1.0
   resolution: "ip-address@npm:10.1.0"
   checksum: 10c0/0103516cfa93f6433b3bd7333fa876eb21263912329bfa47010af5e16934eeeff86f3d2ae700a3744a137839ddfad62b900c7a445607884a49b5d1e32a3d7566
+  languageName: node
+  linkType: hard
+
+"ipaddr.js@npm:^2.0.0":
+  version: 2.3.0
+  resolution: "ipaddr.js@npm:2.3.0"
+  checksum: 10c0/084bab99e2f6875d7a62adc3325e1c64b038a12c9521e35fb967b5e263a8b3afb1b8884dd77c276092331f5d63298b767491e10997ef147c62da01b143780bbd
   languageName: node
   linkType: hard
 
@@ -1329,6 +1343,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"string2compact@npm:^2.0.1":
+  version: 2.0.1
+  resolution: "string2compact@npm:2.0.1"
+  dependencies:
+    addr-to-ip-port: "npm:^2.0.0"
+    ipaddr.js: "npm:^2.0.0"
+  checksum: 10c0/4b07420740b1e6e43a0493e2bd19d7a45855f6f969ca1af6c3d40e0555632183707988f22212946b462cc115871a57aab7843add520139faf878d44eee7ba39a
+  languageName: node
+  linkType: hard
+
 "supports-color@npm:^10.0.0":
   version: 10.2.2
   resolution: "supports-color@npm:10.2.2"
@@ -1517,6 +1541,7 @@ __metadata:
     "@types/ws": "npm:^8.18.1"
     lru: "npm:^3.1.0"
     random-iterate: "npm:^1.0.1"
+    string2compact: "npm:^2.0.1"
     typescript: "npm:^5.5.2"
     uint8-util: "npm:^2.2.6"
     unordered-array-remove: "npm:^1.0.2"

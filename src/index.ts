@@ -1,39 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
-// @ts-ignore
-import Swarm from "./types/lib/swarm.js";
-// @ts-ignore
-import parseWebSocketRequest from "./types/lib/parse-websocket.js";
-// @ts-ignore
-import * as common from "./types/lib/common-node.js";
-
-function hex2bin(hex: string) {
-	if (hex.length % 2 !== 0) hex = '0' + hex;
-	let str = "";
-	for (let i = 0; i < hex.length; i += 2) {
-		str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-	}
-	return str;
-}
-
-function string2compact(peers: string[]) {
-	let buf = new Uint8Array(peers.length * 6);
-	let offset = 0;
-	for (let peer of peers) {
-		let [ip, port] = peer.split(':');
-		let parts = ip.split('.');
-		for (let i = 0; i < 4; i++) {
-			buf[offset++] = parseInt(parts[i], 10) || 0;
-		}
-		let p = parseInt(port, 10) || 0;
-		buf[offset++] = (p >> 8) & 0xff;
-		buf[offset++] = p & 0xff;
-	}
-	let str = "";
-	for (let i = 0; i < buf.length; i++) {
-		str += String.fromCharCode(buf[i]);
-	}
-	return str;
-}
+import Swarm from "./lib/swarm.js";
+import parseWebSocketRequest from "./lib/parse-websocket.js";
+import * as common from "./lib/common-node.js";
+import { hex2bin } from "uint8-util";
+import string2compact from 'string2compact'
 
 export interface Env {
 	WEBSOCKET_SERVER: DurableObjectNamespace<TrackerObject>;

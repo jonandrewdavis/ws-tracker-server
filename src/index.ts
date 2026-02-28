@@ -98,8 +98,7 @@ export class TrackerObject extends DurableObject {
 			console.log(`WebSocket tracker: ws://${wsHost}:${wsPort}`)
 		})
 
-
-		// // listen for individual tracker messages from peers:
+		// listen for individual tracker messages from peers:
 		server.on('start', function (addr: string) {
 			console.log('got start message from ' + addr)
 		})
@@ -108,10 +107,11 @@ export class TrackerObject extends DurableObject {
 		server.on('update', function (addr: string) { })
 		server.on('stop', function (addr: string) { })
 
+		const sendSocket = server.onWebSocketConnection.bind(server)
 
 		return new Response(null, {
 			status: 101,
-			webSocket: server.ws
+			webSocket: sendSocket
 		});
 	};
 }

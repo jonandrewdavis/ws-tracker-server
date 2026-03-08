@@ -1,3 +1,5 @@
+// https://github.com/webtorrent/bittorrent-tracker/blob/master/lib/server/swarm.js
+
 import arrayRemove from 'unordered-array-remove'
 import LRU from 'lru'
 import randomIterate from 'random-iterate'
@@ -96,6 +98,7 @@ class Swarm {
         // If it's a websocket, remove this swarm's infohash from the list of active
         // swarms that this peer is participating in.
         if (peer.socket && !peer.socket.destroyed) {
+            if (!peer.socket.infoHashes) return
             const index = peer.socket.infoHashes.indexOf(this.infoHash)
             arrayRemove(peer.socket.infoHashes, index)
         }

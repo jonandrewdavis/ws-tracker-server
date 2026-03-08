@@ -1,9 +1,9 @@
-import { DurableObject } from "cloudflare:workers";
-import Swarm from "./lib/swarm.js";
-import parseWebSocketRequest from "./lib/parse-websocket.js";
-import * as common from "./lib/common-node.js";
-import { hex2bin } from "uint8-util";
-import string2compact from 'string2compact'
+import { DurableObject } from 'cloudflare:workers';
+import Swarm from './lib/swarm.js';
+import parseWebSocketRequest from './lib/parse-websocket.js';
+import * as common from './lib/common-node.js';
+import { hex2bin } from 'uint8-util';
+import string2compact from 'string2compact';
 
 export interface Env {
 	WEBSOCKET_SERVER: DurableObjectNamespace<TrackerObject>;
@@ -37,6 +37,7 @@ interface SocketAttachment {
 }
 
 // Durable Object
+// Implements: https://github.com/webtorrent/bittorrent-tracker/blob/master/server.js
 export class TrackerObject extends DurableObject {
 	intervalMs: number = 2 * 60 * 1000;
 	torrents: Record<string, any> = {};
@@ -61,7 +62,7 @@ export class TrackerObject extends DurableObject {
 			infoHashes: [],
 			ip,
 			port,
-			addr
+			addr,
 		} as SocketAttachment);
 
 		return new Response(null, {
@@ -82,9 +83,11 @@ export class TrackerObject extends DurableObject {
 		try {
 			params = parseWebSocketRequest(ws, {}, message as string);
 		} catch (err: any) {
-			ws.send(JSON.stringify({
-				'failure reason': err.message
-			}));
+			ws.send(
+				JSON.stringify({
+					'failure reason': err.message,
+				}),
+			);
 			console.warn('parseWebSocketRequest warning:', err);
 			return;
 		}
@@ -96,11 +99,13 @@ export class TrackerObject extends DurableObject {
 
 		this._onRequest(params, ws, attachment, (err: any, response: any) => {
 			if (err) {
-				ws.send(JSON.stringify({
-					action: params.action === common.ACTIONS.ANNOUNCE ? 'announce' : 'scrape',
-					'failure reason': err.message,
-					info_hash: hex2bin(params.info_hash)
-				}));
+				ws.send(
+					JSON.stringify({
+						action: params.action === common.ACTIONS.ANNOUNCE ? 'announce' : 'scrape',
+						'failure reason': err.message,
+						info_hash: hex2bin(params.info_hash),
+					}),
+				);
 				console.warn('onRequest warning', err);
 				return;
 			}
@@ -127,20 +132,22 @@ export class TrackerObject extends DurableObject {
 
 			if (Array.isArray(params.offers)) {
 				peers.forEach((peer: any, i: number) => {
-					peer.socket.send(JSON.stringify({
-						action: 'announce',
-						offer: params.offers[i].offer,
-						offer_id: params.offers[i].offer_id,
-						peer_id: hex2bin(attachment.peerId!),
-						info_hash: hex2bin(params.info_hash)
-					}));
+					peer.socket.send(
+						JSON.stringify({
+							action: 'announce',
+							offer: params.offers[i].offer,
+							offer_id: params.offers[i].offer_id,
+							peer_id: hex2bin(attachment.peerId!),
+							info_hash: hex2bin(params.info_hash),
+						}),
+					);
 				});
 			}
 
 			const done = () => {
 				// Event emitters are not present natively in DOs.
 				// Logic can be added here if needed.
-			}
+			};
 
 			if (params.answer) {
 				this.getSwarm(params.info_hash, (err: any, swarm: any) => {
@@ -154,13 +161,15 @@ export class TrackerObject extends DurableObject {
 						return console.warn(new Error('no peer with that `to_peer_id`'));
 					}
 
-					toPeer.socket.send(JSON.stringify({
-						action: 'announce',
-						answer: params.answer,
-						offer_id: params.offer_id,
-						peer_id: hex2bin(attachment.peerId!),
-						info_hash: hex2bin(params.info_hash)
-					}));
+					toPeer.socket.send(
+						JSON.stringify({
+							action: 'announce',
+							answer: params.answer,
+							offer_id: params.offer_id,
+							peer_id: hex2bin(attachment.peerId!),
+							info_hash: hex2bin(params.info_hash),
+						}),
+					);
 
 					done();
 				});
@@ -175,14 +184,14 @@ export class TrackerObject extends DurableObject {
 		if (!attachment) return;
 
 		if (attachment.peerId) {
-			attachment.infoHashes.slice(0).forEach(infoHash => {
+			attachment.infoHashes.slice(0).forEach((infoHash) => {
 				const swarm = this.torrents[infoHash];
 				if (swarm) {
 					swarm.announce({
 						type: 'ws',
 						event: 'stopped',
 						numwant: 0,
-						peer_id: attachment!.peerId
+						peer_id: attachment!.peerId,
 					});
 				}
 			});
@@ -224,7 +233,7 @@ export class TrackerObject extends DurableObject {
 		const self = this;
 
 		if (this._filter) {
-			this._filter(params.info_hash, params, err => {
+			this._filter(params.info_hash, params, (err) => {
 				if (err) return cb(err);
 				getOrCreateSwarm((err: any, swarm: any) => {
 					if (err) return cb(err);
@@ -259,13 +268,17 @@ export class TrackerObject extends DurableObject {
 
 				if (params.compact === 1) {
 					const peers = response.peers;
-					response.peers = string2compact(peers.filter((peer: any) => common.IPV4_RE.test(peer.ip)).map((peer: any) => `${peer.ip}:${peer.port}`));
-					response.peers6 = string2compact(peers.filter((peer: any) => common.IPV6_RE.test(peer.ip)).map((peer: any) => `[${peer.ip}]:${peer.port}`));
+					response.peers = string2compact(
+						peers.filter((peer: any) => common.IPV4_RE.test(peer.ip)).map((peer: any) => `${peer.ip}:${peer.port}`),
+					);
+					response.peers6 = string2compact(
+						peers.filter((peer: any) => common.IPV6_RE.test(peer.ip)).map((peer: any) => `[${peer.ip}]:${peer.port}`),
+					);
 				} else if (params.compact === 0) {
 					response.peers = response.peers.map((peer: any) => ({
 						'peer id': hex2bin(peer.peerId),
 						ip: peer.ip,
-						port: peer.port
+						port: peer.port,
 					}));
 				}
 
@@ -279,42 +292,46 @@ export class TrackerObject extends DurableObject {
 			params.info_hash = Object.keys(this.torrents);
 		}
 
-		Promise.all(params.info_hash.map((infoHash: string) => {
-			return new Promise((resolve, reject) => {
-				this.getSwarm(infoHash, (err: any, swarm: any) => {
-					if (err) return reject(err);
-					if (swarm) {
-						swarm.scrape(params, (err: any, scrapeInfo: any) => {
-							if (err) return reject(err);
-							resolve({
-								infoHash,
-								complete: (scrapeInfo && scrapeInfo.complete) || 0,
-								incomplete: (scrapeInfo && scrapeInfo.incomplete) || 0
+		Promise.all(
+			params.info_hash.map((infoHash: string) => {
+				return new Promise((resolve, reject) => {
+					this.getSwarm(infoHash, (err: any, swarm: any) => {
+						if (err) return reject(err);
+						if (swarm) {
+							swarm.scrape(params, (err: any, scrapeInfo: any) => {
+								if (err) return reject(err);
+								resolve({
+									infoHash,
+									complete: (scrapeInfo && scrapeInfo.complete) || 0,
+									incomplete: (scrapeInfo && scrapeInfo.incomplete) || 0,
+								});
 							});
-						});
-					} else {
-						resolve({ infoHash, complete: 0, incomplete: 0 });
-					}
+						} else {
+							resolve({ infoHash, complete: 0, incomplete: 0 });
+						}
+					});
 				});
-			});
-		})).then((results: any[]) => {
-			const response: any = {
-				action: common.ACTIONS.SCRAPE,
-				files: {},
-				flags: { min_request_interval: Math.ceil(this.intervalMs / 1000) }
-			};
-
-			results.forEach((result: any) => {
-				response.files[hex2bin(result.infoHash)] = {
-					complete: result.complete || 0,
-					incomplete: result.incomplete || 0,
-					downloaded: result.complete || 0
+			}),
+		)
+			.then((results: any[]) => {
+				const response: any = {
+					action: common.ACTIONS.SCRAPE,
+					files: {},
+					flags: { min_request_interval: Math.ceil(this.intervalMs / 1000) },
 				};
-			});
 
-			cb(null, response);
-		}).catch(err => {
-			cb(err);
-		});
+				results.forEach((result: any) => {
+					response.files[hex2bin(result.infoHash)] = {
+						complete: result.complete || 0,
+						incomplete: result.incomplete || 0,
+						downloaded: result.complete || 0,
+					};
+				});
+
+				cb(null, response);
+			})
+			.catch((err) => {
+				cb(err);
+			});
 	}
 }

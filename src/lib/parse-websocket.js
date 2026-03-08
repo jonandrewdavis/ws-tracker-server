@@ -1,3 +1,5 @@
+// https://github.com/webtorrent/bittorrent-tracker/blob/master/lib/server/parse-websocket.js
+
 import { bin2hex } from 'uint8-util'
 
 import * as common from './common-node.js'

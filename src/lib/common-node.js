@@ -1,7 +1,8 @@
 /**
  * Functions/constants needed by both the client and server (but only in node).
  * These are separate from common.js so they can be skipped when bundling for the browser.
- */
+ * Source: https://github.com/webtorrent/bittorrent-tracker/blob/master/lib/common-node.js
+*/
 
 import querystring from 'querystring'
 import { concat } from 'uint8-util'

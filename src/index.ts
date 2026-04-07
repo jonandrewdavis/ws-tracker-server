@@ -42,9 +42,56 @@ export class TrackerObject extends DurableObject {
 	intervalMs: number = 2 * 60 * 1000;
 	torrents: Record<string, any> = {};
 	_filter?: (infoHash: string, params: any, cb: (err?: any) => void) => void;
+	private initialized = false;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
+	}
+
+	/**
+	 * Called once per DO lifetime (after hibernation wakeup or cold start).
+	 * Rebuilds this.torrents from the WebSocket attachments that Cloudflare
+	 * automatically persists through hibernation, so peer lookups keep working
+	 * after the DO is evicted and restarted.
+	 */
+	private async _ensureInitialized(): Promise<void> {
+		if (this.initialized) return;
+		this.initialized = true;
+
+		const sockets = this.ctx.getWebSockets();
+		if (sockets.length === 0) return;
+
+		console.log(`[restore] rebuilding swarm state from ${sockets.length} hibernated socket(s)`);
+
+		for (const socket of sockets) {
+			const attachment = socket.deserializeAttachment() as SocketAttachment | null;
+			if (!attachment?.peerId || !attachment.infoHashes?.length) continue;
+
+			// Re-inject connection info so the socket behaves normally
+			(socket as any).ip = attachment.ip;
+			(socket as any).port = attachment.port;
+			(socket as any).addr = attachment.addr;
+
+			for (const infoHash of attachment.infoHashes) {
+				if (!this.torrents[infoHash]) {
+					this.torrents[infoHash] = new Swarm(infoHash, this);
+				}
+				const swarm = this.torrents[infoHash];
+
+				// Only add if not already present (cold start vs duplicate events)
+				if (!swarm.peers.get(attachment.peerId)) {
+					swarm.peers.set(attachment.peerId, {
+						type: 'ws',
+						complete: false, // unknown after restart; treated as incomplete
+						peerId: attachment.peerId,
+						ip: attachment.ip,
+						port: attachment.port,
+						socket,
+					});
+					swarm.incomplete += 1;
+				}
+			}
+		}
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -72,6 +119,7 @@ export class TrackerObject extends DurableObject {
 	}
 
 	async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string) {
+		await this._ensureInitialized();
 		let attachment = ws.deserializeAttachment() as SocketAttachment;
 
 		// inject connection info into ws so parseWebSocketRequest finds them
@@ -180,6 +228,7 @@ export class TrackerObject extends DurableObject {
 	}
 
 	async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
+		await this._ensureInitialized();
 		let attachment = ws.deserializeAttachment() as SocketAttachment | null;
 		if (!attachment) return;
 

@@ -1,6 +1,6 @@
 # ws-tracker-server
 
-A websocket based tracking server to support Godot client connections via Tube. Announces available sessions to be joined. Add `wss://dev.andoodev.com/` to your tracker URLs
+A websocket based tracking server to support Godot client connections via Tube. Announces available sessions to be joined. Add `wss://dev.androodev.com/` to your tracker URLs
 
 - Tube: https://github.com/koopmyers/tube
 - Using your own servers: https://github.com/koopmyers/tube?tab=readme-ov-file#using-your-own-servers

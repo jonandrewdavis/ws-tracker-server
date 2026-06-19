@@ -48,13 +48,13 @@ yarn deploy
 These are stored in the `.dev.vars` and set at the time of creation of the worker.
 
 - `SECRET_KEY`: The secret key used to authenticate requests.
-- `TURN_KEY`: The turn key used to authenticate requests.
 
 ### NOTES & TODO
 
 - Additional filtering of connections, reject those without `SECRET_KEY`
-- TURN Server (for fall back to relay, in the case of locked down networks (most commonly university networks) also via cloudflare. Just a matter of adding a route)
 - Matchmaking
   - Pairing sessions effectively, deterministically
   - May need a message queue, dead-letter queue, and retry, etc
   - Expect this to be a bit of an interesting challenge
+
+- TURN Server was moved to the API.

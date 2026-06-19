@@ -8,8 +8,6 @@ import string2compact from 'string2compact';
 export interface Env {
 	WEBSOCKET_SERVER: DurableObjectNamespace<TrackerObject>;
 	SECRET_KEY: string;
-	TURN_KEY: string;
-	ASSETS: any;
 }
 
 export default {

@@ -10,6 +10,7 @@ class Swarm {
     constructor(infoHash, server) {
         const self = this
         self.infoHash = infoHash
+        self.server = server
         self.complete = 0
         self.incomplete = 0
 
@@ -30,6 +31,9 @@ class Swarm {
             }
             self._onAnnounceStopped(params, peer, peer.peerId)
             peer.socket = null
+            if (self.server && self.server.onSwarmChange) {
+                self.server.onSwarmChange(self.infoHash).catch(err => console.error('Error in swarm evict persistence:', err))
+            }
         })
     }
 
@@ -43,7 +47,12 @@ class Swarm {
             self._onAnnounceStarted(params, peer, id)
         } else if (params.event === 'stopped') {
             self._onAnnounceStopped(params, peer, id)
-            if (!cb) return // when websocket is closed
+            if (!cb) {
+                if (self.server && self.server.onSwarmChange) {
+                    self.server.onSwarmChange(self.infoHash).catch(err => console.error('Error in swarm stopped persistence:', err))
+                }
+                return // when websocket is closed
+            }
         } else if (params.event === 'completed') {
             self._onAnnounceCompleted(params, peer, id)
         } else if (params.event === 'update') {
@@ -54,11 +63,22 @@ class Swarm {
             cb(new Error('invalid event'))
             return
         }
-        cb(null, {
-            complete: self.complete,
-            incomplete: self.incomplete,
-            peers: self._getPeers(params.numwant, params.peer_id, !!params.socket)
-        })
+
+        const runCb = () => {
+            cb(null, {
+                complete: self.complete,
+                incomplete: self.incomplete,
+                peers: self._getPeers(params.numwant, params.peer_id, !!params.socket)
+            })
+        }
+
+        if (self.server && self.server.onSwarmChange) {
+            self.server.onSwarmChange(self.infoHash)
+                .then(runCb)
+                .catch(err => cb(err))
+        } else {
+            runCb()
+        }
     }
 
     scrape(params, cb) {
@@ -155,6 +175,7 @@ class Swarm {
             if (!peer) continue
             if (isWebRTC && peer.peerId === ownPeerId) continue // don't send peer to itself
             if ((isWebRTC && peer.type !== 'ws') || (!isWebRTC && peer.type === 'ws')) continue // send proper peer type
+            if (peer.type === 'ws' && !peer.socket) continue // skip peers that do not have active websocket connections
             peers.push(peer)
         }
         return peers

@@ -58,11 +58,46 @@ export class TrackerObject extends DurableObject {
 		if (this.initialized) return;
 		this.initialized = true;
 
-		const sockets = this.ctx.getWebSockets();
-		if (sockets.length === 0) return;
+		// 1. Load all swarms from storage and filter out ones older than 2 hours
+		const swarmsFromStorage = await this.ctx.storage.list<any>({ prefix: 'swarm:' });
+		const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
 
+		for (const [key, swarmState] of swarmsFromStorage.entries()) {
+			const infoHash = swarmState.infoHash;
+
+			if (swarmState.lastUpdated && swarmState.lastUpdated < twoHoursAgo) {
+				console.log(`[cleanup] removing stale swarm ${infoHash} (last updated ${new Date(swarmState.lastUpdated).toISOString()})`);
+				await this.ctx.storage.delete(key);
+				continue;
+			}
+
+			if (!this.torrents[infoHash]) {
+				this.torrents[infoHash] = new Swarm(infoHash, this);
+			}
+			const swarm = this.torrents[infoHash];
+			swarm.complete = swarmState.complete;
+			swarm.incomplete = swarmState.incomplete;
+
+			// Populate peers
+			if (Array.isArray(swarmState.peers)) {
+				for (const p of swarmState.peers) {
+					swarm.peers.set(p.peerId, {
+						type: p.type,
+						complete: p.complete,
+						peerId: p.peerId,
+						ip: p.ip,
+						port: p.port,
+						socket: null, // will be linked below if the WebSocket is active
+					});
+				}
+			}
+		}
+
+		// 2. Get active WebSockets and link/merge them back into the restored swarms
+		const sockets = this.ctx.getWebSockets();
 		console.log(`[restore] rebuilding swarm state from ${sockets.length} hibernated socket(s)`);
 
+		let shouldPersistChanges = false;
 		for (const socket of sockets) {
 			const attachment = socket.deserializeAttachment() as SocketAttachment | null;
 			if (!attachment?.peerId || !attachment.infoHashes?.length) continue;
@@ -78,20 +113,34 @@ export class TrackerObject extends DurableObject {
 				}
 				const swarm = this.torrents[infoHash];
 
-				// Only add if not already present (cold start vs duplicate events)
-				if (!swarm.peers.get(attachment.peerId)) {
-					swarm.peers.set(attachment.peerId, {
+				let peer = swarm.peers.get(attachment.peerId);
+				if (!peer) {
+					peer = {
 						type: 'ws',
 						complete: false, // unknown after restart; treated as incomplete
 						peerId: attachment.peerId,
 						ip: attachment.ip,
 						port: attachment.port,
 						socket,
-					});
+					};
+					swarm.peers.set(attachment.peerId, peer);
 					swarm.incomplete += 1;
+					shouldPersistChanges = true;
+				} else {
+					peer.socket = socket;
 				}
 			}
 		}
+
+		// If any new peers/swarms were added during WS reconciliation, persist those changes
+		if (shouldPersistChanges) {
+			for (const infoHash of Object.keys(this.torrents)) {
+				await this.onSwarmChange(infoHash);
+			}
+		}
+
+		// Log each restart and the current count of torrents and connections during restart
+		console.log(`[restart] Durable Object restarted. Current torrents: ${Object.keys(this.torrents).length}, Current connections: ${sockets.length}`);
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -180,15 +229,17 @@ export class TrackerObject extends DurableObject {
 
 			if (Array.isArray(params.offers)) {
 				peers.forEach((peer: any, i: number) => {
-					peer.socket.send(
-						JSON.stringify({
-							action: 'announce',
-							offer: params.offers[i].offer,
-							offer_id: params.offers[i].offer_id,
-							peer_id: hex2bin(attachment.peerId!),
-							info_hash: hex2bin(params.info_hash),
-						}),
-					);
+					if (peer.socket) {
+						peer.socket.send(
+							JSON.stringify({
+								action: 'announce',
+								offer: params.offers[i].offer,
+								offer_id: params.offers[i].offer_id,
+								peer_id: hex2bin(attachment.peerId!),
+								info_hash: hex2bin(params.info_hash),
+							}),
+						);
+					}
 				});
 			}
 
@@ -209,15 +260,19 @@ export class TrackerObject extends DurableObject {
 						return console.warn(new Error('no peer with that `to_peer_id`'));
 					}
 
-					toPeer.socket.send(
-						JSON.stringify({
-							action: 'announce',
-							answer: params.answer,
-							offer_id: params.offer_id,
-							peer_id: hex2bin(attachment.peerId!),
-							info_hash: hex2bin(params.info_hash),
-						}),
-					);
+					if (toPeer.socket) {
+						toPeer.socket.send(
+							JSON.stringify({
+								action: 'announce',
+								answer: params.answer,
+								offer_id: params.offer_id,
+								peer_id: hex2bin(attachment.peerId!),
+								info_hash: hex2bin(params.info_hash),
+							}),
+						);
+					} else {
+						console.warn(new Error('to_peer socket is not active'));
+					}
 
 					done();
 				});
@@ -275,7 +330,50 @@ export class TrackerObject extends DurableObject {
 	createSwarm(infoHash: string, cb: (err: any, swarm?: any) => void) {
 		let swarm = new Swarm(infoHash, this);
 		this.torrents[infoHash] = swarm;
-		cb(null, swarm);
+		this.onSwarmChange(infoHash)
+			.then(() => cb(null, swarm))
+			.catch((err) => cb(err));
+	}
+
+	async removeSwarm(infoHash: string): Promise<void> {
+		delete this.torrents[infoHash];
+		await this.ctx.storage.delete(`swarm:${infoHash}`);
+		console.log(`[cleanup] removed empty swarm ${infoHash} from memory and storage`);
+	}
+
+	async onSwarmChange(infoHash: string): Promise<void> {
+		const swarm = this.torrents[infoHash];
+		if (!swarm) {
+			await this.ctx.storage.delete(`swarm:${infoHash}`);
+			return;
+		}
+
+		if (swarm.peers.length === 0) {
+			await this.removeSwarm(infoHash);
+			return;
+		}
+
+		const peerList: any[] = [];
+		for (const key of swarm.peers.keys) {
+			const peer = swarm.peers.peek(key);
+			if (peer) {
+				peerList.push({
+					type: peer.type,
+					complete: peer.complete,
+					peerId: peer.peerId,
+					ip: peer.ip,
+					port: peer.port,
+				});
+			}
+		}
+
+		await this.ctx.storage.put(`swarm:${infoHash}`, {
+			infoHash: swarm.infoHash,
+			complete: swarm.complete,
+			incomplete: swarm.incomplete,
+			peers: peerList,
+			lastUpdated: Date.now(),
+		});
 	}
 
 	_onAnnounce(params: any, ws: WebSocket, attachment: SocketAttachment, cb: (err: any, response?: any) => void) {

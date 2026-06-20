@@ -70,7 +70,6 @@ class Swarm {
 
     _onAnnounceStarted(params, peer, id) {
         if (peer) {
-            console.log('unexpected `started` event from peer that is already in swarm')
             return this._onAnnounceUpdate(params, peer, id) // treat as an update
         }
 
@@ -88,7 +87,6 @@ class Swarm {
 
     _onAnnounceStopped(params, peer, id) {
         if (!peer) {
-            console.log('unexpected `stopped` event from peer that is not in swarm')
             return // do nothing
         }
 
@@ -108,11 +106,9 @@ class Swarm {
 
     _onAnnounceCompleted(params, peer, id) {
         if (!peer) {
-            console.log('unexpected `completed` event from peer that is not in swarm')
             return this._onAnnounceStarted(params, peer, id) // treat as a start
         }
         if (peer.complete) {
-            console.log('unexpected `completed` event from peer that is already completed')
             return this._onAnnounceUpdate(params, peer, id) // treat as an update
         }
 
@@ -137,7 +133,6 @@ class Swarm {
 
     _onAnnouncePaused(params, peer, id) {
         if (!peer) {
-            console.log('unexpected `paused` event from peer that is not in swarm')
             return this._onAnnounceStarted(params, peer, id) // treat as a start
         }
 

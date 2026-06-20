@@ -5,6 +5,13 @@ import * as common from './lib/common-node.js';
 import { hex2bin } from 'uint8-util';
 import string2compact from 'string2compact';
 
+// Stable event name as the message, structured fields as the 2nd arg.
+const log = {
+	info: (event: string, fields: object = {}) => console.info(event, fields),
+	error: (event: string, fields: object = {}) => console.error(event, fields),
+};
+const shortId = (id?: string | null) => (id ? id.slice(0, 8) : 'none');
+
 export interface Env {
 	WEBSOCKET_SERVER: DurableObjectNamespace<TrackerObject>;
 	SECRET_KEY: string;
@@ -95,7 +102,7 @@ export class TrackerObject extends DurableObject {
 					'failure reason': err.message,
 				}),
 			);
-			console.warn('parseWebSocketRequest warning:', err);
+			// Not logged: scanners spam public trackers with malformed requests.
 			return;
 		}
 
@@ -113,7 +120,6 @@ export class TrackerObject extends DurableObject {
 						info_hash: hex2bin(params.info_hash),
 					}),
 				);
-				console.warn('onRequest warning', err);
 				return;
 			}
 
@@ -158,15 +164,23 @@ export class TrackerObject extends DurableObject {
 			};
 
 			if (params.answer) {
+				const sessionId = hex2bin(params.info_hash).slice(-5);
 				this.getSwarm(params.info_hash, (err: any, swarm: any) => {
-					if (err) return console.warn(err);
-					if (!swarm) {
-						return console.warn(new Error('no swarm with that `info_hash`'));
+					if (err || !swarm) {
+						return log.error('peer:join-failed', {
+							reason: 'no-swarm',
+							sessionId,
+							to: shortId(params.to_peer_id),
+						});
 					}
 
 					const toPeer = swarm.peers.get(params.to_peer_id);
 					if (!toPeer) {
-						return console.warn(new Error('no peer with that `to_peer_id`'));
+						return log.error('peer:join-failed', {
+							reason: 'no-peer',
+							sessionId,
+							to: shortId(params.to_peer_id),
+						});
 					}
 
 					toPeer.socket.send(
@@ -179,6 +193,13 @@ export class TrackerObject extends DurableObject {
 							interval: Math.ceil(this.intervalMs / 1000),
 						}),
 					);
+
+					// Answer relayed to target peer: a player successfully joined.
+					log.info('peer:joined', {
+						sessionId,
+						from: shortId(attachment.peerId),
+						to: shortId(params.to_peer_id),
+					});
 
 					done();
 				});
@@ -212,7 +233,7 @@ export class TrackerObject extends DurableObject {
 	}
 
 	async webSocketError(ws: WebSocket, error: unknown) {
-		console.warn('websocket error', error);
+		log.error('ws:error', { err: String(error) });
 		await this.webSocketClose(ws, 1006, 'Error', false);
 	}
 

@@ -29,7 +29,9 @@
 	"observability": {
 		"enabled": true,
 		"logs": {
-			"enabled": true
+			"enabled": true,
+			// Drop auto invocation logs; keep only our explicit console.* events.
+			"invocation_logs": false
 		}
 	},
 	/**

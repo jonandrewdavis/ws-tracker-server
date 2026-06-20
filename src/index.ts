@@ -8,8 +8,6 @@ import string2compact from 'string2compact';
 export interface Env {
 	WEBSOCKET_SERVER: DurableObjectNamespace<TrackerObject>;
 	SECRET_KEY: string;
-	TURN_KEY: string;
-	ASSETS: any;
 }
 
 export default {
@@ -288,12 +286,18 @@ export class TrackerObject extends DurableObject {
 	}
 
 	_onScrape(params: any, cb: (err: any, response?: any) => void) {
-		if (params.info_hash == null) {
-			params.info_hash = Object.keys(this.torrents);
+		let infoHashes: string[];
+		if (params.info_hash != null) {
+			infoHashes = params.info_hash;
+		} else if (params.app_id != null) {
+			// Only the swarms whose info hash belongs to this app.
+			infoHashes = Object.keys(this.torrents).filter((infoHash) => hex2bin(infoHash).slice(0, -5) === params.app_id);
+		} else {
+			infoHashes = Object.keys(this.torrents);
 		}
 
 		Promise.all(
-			params.info_hash.map((infoHash: string) => {
+			infoHashes.map((infoHash: string) => {
 				return new Promise((resolve, reject) => {
 					this.getSwarm(infoHash, (err: any, swarm: any) => {
 						if (err) return reject(err);
@@ -317,6 +321,9 @@ export class TrackerObject extends DurableObject {
 				const response: any = {
 					action: common.ACTIONS.SCRAPE,
 					files: {},
+					// Lobbies are live swarms grouped by app_id; each value lists the
+					// current session ids. Derived from swarms, never tracked separately.
+					lobbies: {} as Record<string, string[]>,
 					flags: { min_request_interval: Math.ceil(this.intervalMs / 1000) },
 				};
 
@@ -326,6 +333,22 @@ export class TrackerObject extends DurableObject {
 						incomplete: result.incomplete || 0,
 						downloaded: result.complete || 0,
 					};
+
+					// Reclaim empty swarms so dead lobbies don't linger in memory,
+					// and omit them from the lobby list.
+					if ((result.complete || 0) + (result.incomplete || 0) === 0) {
+						delete this.torrents[result.infoHash];
+						return;
+					}
+
+					// The info hash is the ASCII string `app_id` + `session_id`;
+					// the session id is always the last 5 characters.
+					const infoHash = hex2bin(result.infoHash);
+					const appId = infoHash.slice(0, -5);
+					const sessionId = infoHash.slice(-5);
+
+					if (!response.lobbies[appId]) response.lobbies[appId] = [];
+					response.lobbies[appId].push(sessionId);
 				});
 
 				cb(null, response);

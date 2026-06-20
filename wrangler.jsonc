@@ -36,11 +36,11 @@
 	 * Environment Variables
 	 * INTERVAL_MS: announce/heartbeat interval reported to clients (ms).
 	 * PEERS_CACHE_TTL_MS: how long a peer survives without a heartbeat before
-	 * it is aged out of a swarm (ms). 15 minutes.
+	 * it is aged out of a swarm (ms). 1 minute.
 	 */
 	"vars": {
 		"INTERVAL_MS": 120000,
-		"PEERS_CACHE_TTL_MS": 900000
+		"PEERS_CACHE_TTL_MS": 60000
 	}
 	/**
 	 * Smart Placement

@@ -51,7 +51,7 @@ export class TrackerObject extends DurableObject {
 		super(ctx, env);
 		// Overridable via wrangler `vars`; fall back to sane defaults.
 		this.intervalMs = Number(env.INTERVAL_MS) || 2 * 60 * 1000;
-		this.peersCacheTtl = Number(env.PEERS_CACHE_TTL_MS) || 15 * 60 * 1000;
+		this.peersCacheTtl = Number(env.PEERS_CACHE_TTL_MS) || 1 * 60 * 1000;
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -146,6 +146,7 @@ export class TrackerObject extends DurableObject {
 							offer_id: params.offers[i].offer_id,
 							peer_id: hex2bin(attachment.peerId!),
 							info_hash: hex2bin(params.info_hash),
+							interval: Math.ceil(this.intervalMs / 1000),
 						}),
 					);
 				});
@@ -175,6 +176,7 @@ export class TrackerObject extends DurableObject {
 							offer_id: params.offer_id,
 							peer_id: hex2bin(attachment.peerId!),
 							info_hash: hex2bin(params.info_hash),
+							interval: Math.ceil(this.intervalMs / 1000),
 						}),
 					);
 

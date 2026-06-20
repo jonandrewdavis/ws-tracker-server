@@ -334,15 +334,18 @@ export class TrackerObject extends DurableObject {
 						downloaded: result.complete || 0,
 					};
 
+					const swarm = this.torrents[result.infoHash];
+					const peerCount = swarm ? swarm.peers.keys.length : 0;
+
 					// Reclaim empty swarms so dead lobbies don't linger in memory,
 					// and omit them from the lobby list.
-					if ((result.complete || 0) + (result.incomplete || 0) === 0) {
+					if (peerCount === 0) {
 						delete this.torrents[result.infoHash];
 						return;
 					}
 
-					// The info hash is the ASCII string `app_id` + `session_id`;
-					// the session id is always the last 5 characters.
+					// The session id is always the last 5 characters.
+					// TODO: Possibly default to 5, but allow a parameter for custom length.
 					const infoHash = hex2bin(result.infoHash);
 					const appId = infoHash.slice(0, -5);
 					const sessionId = infoHash.slice(-5);

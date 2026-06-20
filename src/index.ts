@@ -296,68 +296,35 @@ export class TrackerObject extends DurableObject {
 			infoHashes = Object.keys(this.torrents);
 		}
 
-		Promise.all(
-			infoHashes.map((infoHash: string) => {
-				return new Promise((resolve, reject) => {
-					this.getSwarm(infoHash, (err: any, swarm: any) => {
-						if (err) return reject(err);
-						if (swarm) {
-							swarm.scrape(params, (err: any, scrapeInfo: any) => {
-								if (err) return reject(err);
-								resolve({
-									infoHash,
-									complete: (scrapeInfo && scrapeInfo.complete) || 0,
-									incomplete: (scrapeInfo && scrapeInfo.incomplete) || 0,
-								});
-							});
-						} else {
-							resolve({ infoHash, complete: 0, incomplete: 0 });
-						}
-					});
-				});
-			}),
-		)
-			.then((results: any[]) => {
-				const response: any = {
-					action: common.ACTIONS.SCRAPE,
-					files: {},
-					// Lobbies are live swarms grouped by app_id; each value lists the
-					// current session ids. Derived from swarms, never tracked separately.
-					lobbies: {} as Record<string, string[]>,
-					flags: { min_request_interval: Math.ceil(this.intervalMs / 1000) },
-				};
+		const response: any = {
+			action: common.ACTIONS.SCRAPE,
+			// Lobbies are live swarms grouped by app_id; each value lists the
+			// current session ids. Derived from swarms, never tracked separately.
+			lobbies: {} as Record<string, string[]>,
+			flags: { min_request_interval: Math.ceil(this.intervalMs / 1000) },
+		};
 
-				results.forEach((result: any) => {
-					response.files[hex2bin(result.infoHash)] = {
-						complete: result.complete || 0,
-						incomplete: result.incomplete || 0,
-						downloaded: result.complete || 0,
-					};
+		infoHashes.forEach((hexInfoHash: string) => {
+			const swarm = this.torrents[hexInfoHash];
+			const peerCount = swarm ? swarm.peers.keys.length : 0;
 
-					const swarm = this.torrents[result.infoHash];
-					const peerCount = swarm ? swarm.peers.keys.length : 0;
+			// Reclaim empty swarms so dead lobbies don't linger in memory, and
+			// skip them so we never send a lobby with no connected peers.
+			if (peerCount === 0) {
+				delete this.torrents[hexInfoHash];
+				return;
+			}
 
-					// Reclaim empty swarms so dead lobbies don't linger in memory,
-					// and omit them from the lobby list.
-					if (peerCount === 0) {
-						delete this.torrents[result.infoHash];
-						return;
-					}
+			// The session id is always the last 5 characters.
+			// TODO: Possibly default to 5, but allow a parameter for custom length.
+			const infoHash = hex2bin(hexInfoHash);
+			const appId = infoHash.slice(0, -5);
+			const sessionId = infoHash.slice(-5);
 
-					// The session id is always the last 5 characters.
-					// TODO: Possibly default to 5, but allow a parameter for custom length.
-					const infoHash = hex2bin(result.infoHash);
-					const appId = infoHash.slice(0, -5);
-					const sessionId = infoHash.slice(-5);
+			if (!response.lobbies[appId]) response.lobbies[appId] = [];
+			response.lobbies[appId].push(sessionId);
+		});
 
-					if (!response.lobbies[appId]) response.lobbies[appId] = [];
-					response.lobbies[appId].push(sessionId);
-				});
-
-				cb(null, response);
-			})
-			.catch((err) => {
-				cb(err);
-			});
+		cb(null, response);
 	}
 }

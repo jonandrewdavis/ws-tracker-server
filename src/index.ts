@@ -164,11 +164,14 @@ export class TrackerObject extends DurableObject {
 			};
 
 			if (params.answer) {
-				const sessionId = hex2bin(params.info_hash).slice(-5);
+				const infoHash = hex2bin(params.info_hash);
+				const appId = infoHash.slice(0, -5);
+				const sessionId = infoHash.slice(-5);
 				this.getSwarm(params.info_hash, (err: any, swarm: any) => {
 					if (err || !swarm) {
 						return log.error('peer:join-failed', {
 							reason: 'no-swarm',
+							appId,
 							sessionId,
 							to: shortId(params.to_peer_id),
 						});
@@ -178,6 +181,7 @@ export class TrackerObject extends DurableObject {
 					if (!toPeer) {
 						return log.error('peer:join-failed', {
 							reason: 'no-peer',
+							appId,
 							sessionId,
 							to: shortId(params.to_peer_id),
 						});

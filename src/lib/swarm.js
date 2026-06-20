@@ -124,8 +124,7 @@ class Swarm {
 
     _onAnnounceUpdate(params, peer, id) {
         if (!peer) {
-            console.log('unexpected `update` event from peer that is not in swarm')
-            return this._onAnnounceStarted(params, peer, id) // treat as a start
+            return this._onAnnounceStarted(params, peer, id) // treat as a start (peer unknown after DO hibernation)
         }
 
         if (!peer.complete && params.left === 0) {

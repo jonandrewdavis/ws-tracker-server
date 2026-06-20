@@ -8,6 +8,10 @@ import string2compact from 'string2compact';
 export interface Env {
 	WEBSOCKET_SERVER: DurableObjectNamespace<TrackerObject>;
 	SECRET_KEY: string;
+	// Announce/heartbeat interval reported to clients (ms).
+	INTERVAL_MS?: number;
+	// How long a peer survives without a heartbeat before being aged out (ms).
+	PEERS_CACHE_TTL_MS?: number;
 }
 
 export default {
@@ -37,12 +41,17 @@ interface SocketAttachment {
 // Durable Object
 // Implements: https://github.com/webtorrent/bittorrent-tracker/blob/master/server.js
 export class TrackerObject extends DurableObject {
-	intervalMs: number = 2 * 60 * 1000;
+	intervalMs: number;
+	// Read by Swarm (via `new Swarm(infoHash, this)`) to set the peers LRU maxAge.
+	peersCacheTtl: number;
 	torrents: Record<string, any> = {};
 	_filter?: (infoHash: string, params: any, cb: (err?: any) => void) => void;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
+		// Overridable via wrangler `vars`; fall back to sane defaults.
+		this.intervalMs = Number(env.INTERVAL_MS) || 2 * 60 * 1000;
+		this.peersCacheTtl = Number(env.PEERS_CACHE_TTL_MS) || 15 * 60 * 1000;
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -306,7 +315,10 @@ export class TrackerObject extends DurableObject {
 
 		infoHashes.forEach((hexInfoHash: string) => {
 			const swarm = this.torrents[hexInfoHash];
-			const peerCount = swarm ? swarm.peers.keys.length : 0;
+			// peek() runs the LRU age check, evicting peers whose heartbeat lapsed
+			// past peersCacheTtl. Reading keys.length alone never ages anyone out,
+			// so a peer from a quit client would otherwise be counted indefinitely.
+			const peerCount = swarm ? swarm.peers.keys.filter((peerId: string) => swarm.peers.peek(peerId) !== undefined).length : 0;
 
 			// Reclaim empty swarms so dead lobbies don't linger in memory, and
 			// skip them so we never send a lobby with no connected peers.

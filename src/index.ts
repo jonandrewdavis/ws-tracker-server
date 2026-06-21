@@ -165,7 +165,7 @@ export class TrackerObject extends DurableObject {
 
 			if (params.answer) {
 				const infoHash = hex2bin(params.info_hash);
-				const appId = infoHash.slice(0, -5);
+				const appId = params.info_hash.slice(0, -10); // hex prefix (drops 5-char session)
 				const sessionId = infoHash.slice(-5);
 				this.getSwarm(params.info_hash, (err: any, swarm: any) => {
 					if (err || !swarm) {
@@ -179,8 +179,10 @@ export class TrackerObject extends DurableObject {
 
 					const toPeer = swarm.peers.get(params.to_peer_id);
 					if (!toPeer) {
-						return log.error('peer:join-failed', {
-							reason: 'no-peer',
+						// Target already left/aged out: a late/duplicate trickle answer.
+						// The peers connect directly, so this late relay is benign.
+						// "stale"
+						return log.info('peer:join-client', {
 							appId,
 							sessionId,
 							to: shortId(params.to_peer_id),

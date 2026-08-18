@@ -144,17 +144,16 @@ export class TrackerObject extends DurableObject {
 			}
 
 			if (Array.isArray(params.offers)) {
+				const swarm = this.torrents[params.info_hash];
 				peers.forEach((peer: any, i: number) => {
-					peer.socket.send(
-						JSON.stringify({
-							action: 'announce',
-							offer: params.offers[i].offer,
-							offer_id: params.offers[i].offer_id,
-							peer_id: hex2bin(attachment.peerId!),
-							info_hash: hex2bin(params.info_hash),
-							interval: Math.ceil(this.intervalMs / 1000),
-						}),
-					);
+					this.relay(swarm, peer, {
+						action: 'announce',
+						offer: params.offers[i].offer,
+						offer_id: params.offers[i].offer_id,
+						peer_id: hex2bin(attachment.peerId!),
+						info_hash: hex2bin(params.info_hash),
+						interval: Math.ceil(this.intervalMs / 1000),
+					});
 				});
 			}
 
@@ -189,16 +188,24 @@ export class TrackerObject extends DurableObject {
 						});
 					}
 
-					toPeer.socket.send(
-						JSON.stringify({
-							action: 'announce',
-							answer: params.answer,
-							offer_id: params.offer_id,
-							peer_id: hex2bin(attachment.peerId!),
-							info_hash: hex2bin(params.info_hash),
-							interval: Math.ceil(this.intervalMs / 1000),
-						}),
-					);
+					const relayed = this.relay(swarm, toPeer, {
+						action: 'announce',
+						answer: params.answer,
+						offer_id: params.offer_id,
+						peer_id: hex2bin(attachment.peerId!),
+						info_hash: hex2bin(params.info_hash),
+						interval: Math.ceil(this.intervalMs / 1000),
+					});
+
+					if (!relayed) {
+						// Target's socket was already gone: same benign late-relay case
+						// as a missing peer, just detected one step later.
+						return log.info('peer:join-client', {
+							appId,
+							sessionId,
+							to: shortId(params.to_peer_id),
+						});
+					}
 
 					// Answer relayed to target peer: a player successfully joined.
 					log.info('peer:joined', {
@@ -241,6 +248,28 @@ export class TrackerObject extends DurableObject {
 	async webSocketError(ws: WebSocket, error: unknown) {
 		log.error('ws:error', { err: String(error) });
 		await this.webSocketClose(ws, 1006, 'Error', false);
+	}
+
+	// Relay a payload to another peer's socket. That socket can already be CLOSED
+	// (the client left, but nothing has aged it out of the swarm yet) and send()
+	// throws on a closed socket -- an uncaught throw here would abort the whole
+	// announce, so swallow it and drop the peer from the swarm instead.
+	relay(swarm: any, peer: any, payload: object): boolean {
+		try {
+			peer.socket.send(JSON.stringify(payload));
+			return true;
+		} catch (err: any) {
+			log.info('peer:socket-stale', { peer: shortId(peer.peerId), err: String(err) });
+			if (swarm) {
+				swarm.announce({
+					type: 'ws',
+					event: 'stopped',
+					numwant: 0,
+					peer_id: peer.peerId,
+				});
+			}
+			return false;
+		}
 	}
 
 	_onRequest(params: any, ws: WebSocket, attachment: SocketAttachment, cb: (err: any, response?: any) => void) {

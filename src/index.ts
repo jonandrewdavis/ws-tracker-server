@@ -43,6 +43,8 @@ interface SocketAttachment {
 	ip: string;
 	port: number;
 	addr: string;
+	// Bytes left from the last announce (0 = complete). Used to rebuild swarm stats after a wake.
+	left?: number;
 }
 
 // Durable Object
@@ -59,6 +61,39 @@ export class TrackerObject extends DurableObject {
 		// Overridable via wrangler `vars`; fall back to sane defaults.
 		this.intervalMs = Number(env.INTERVAL_MS) || 2 * 60 * 1000;
 		this.peersCacheTtl = Number(env.PEERS_CACHE_TTL_MS) || 1 * 60 * 1000;
+		this.rebuildSwarms();
+	}
+
+	// Hibernation clears memory but keeps sockets open, so on wake we rebuild
+	// the swarms from each socket's saved peer id and info hashes.
+	rebuildSwarms() {
+		let peers = 0;
+		let sockets = 0;
+		for (const ws of this.ctx.getWebSockets()) {
+			sockets++;
+			const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+			if (!attachment || !attachment.peerId) continue;
+			for (const infoHash of attachment.infoHashes) {
+				const swarm = this.torrents[infoHash] || new Swarm(infoHash, this);
+				this.torrents[infoHash] = swarm;
+				swarm.announce(
+					{
+						type: 'ws',
+						event: 'started',
+						numwant: 0,
+						peer_id: attachment.peerId,
+						left: attachment.left ?? Infinity,
+						ip: attachment.ip,
+						port: attachment.port,
+						addr: attachment.addr,
+						socket: ws,
+					},
+					() => {},
+				);
+				peers++;
+			}
+		}
+		if (sockets > 0) log.info('do:rebuild', { sockets, peers, swarms: Object.keys(this.torrents).length });
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -109,6 +144,14 @@ export class TrackerObject extends DurableObject {
 		if (!attachment.peerId) {
 			attachment.peerId = params.peer_id; // as hex
 			ws.serializeAttachment(attachment);
+		}
+		if (params.action === common.ACTIONS.ANNOUNCE && !params.answer) {
+			// Save `left` for rebuildSwarms(). Skip it if the client sent no usable number.
+			const left = Number.isFinite(params.left) ? params.left : undefined;
+			if (attachment.left !== left) {
+				attachment.left = left;
+				ws.serializeAttachment(attachment);
+			}
 		}
 
 		this._onRequest(params, ws, attachment, (err: any, response: any) => {
